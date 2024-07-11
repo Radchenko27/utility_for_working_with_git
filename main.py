@@ -2,16 +2,6 @@ import git
 import networkx as nx
 import matplotlib.pyplot as plt
 
-# Открываем существующий репозиторий
-repo = git.Repo(r'C:\Users\dimar\OneDrive\Рабочий стол\Портфолио\Стажировка_работа_с_Git')
-
-# Определяем начальный и конечный коммиты
-start_commit = repo.commit('5f6c93f')
-end_commit = repo.commit('9435574')
-
-# Создаем граф
-graph = nx.DiGraph()
-
 
 def add_edges(graph, commit, visited):
     if commit.hexsha in visited:
@@ -20,6 +10,29 @@ def add_edges(graph, commit, visited):
     for parent in commit.parents:
         graph.add_edge(commit.hexsha, parent.hexsha)
         add_edges(graph, parent, visited)
+
+
+def track_changes(first_value, second_value):
+    first = repo.commit(first_value)
+    second = repo.commit(second_value)
+    diff = first.diff(second)
+    for change in diff:
+        print(f"Статус изменения: {change.change_type}")
+        print(f"Из файла: {change.a_path}")
+        print(f"В файл: {change.b_path}")
+        if change.change_type != 'D':  # D - deleted file, no content to show
+            print("Diff content:")
+            # print(change.diff.decode('utf-8'))
+        print("=" * 80)
+# Открываем существующий репозиторий
+repo = git.Repo(r'C:\Users\dimar\OneDrive\Рабочий стол\Портфолио\Стажировка_работа_с_Git')
+
+# Определяем начальный и конечный коммиты
+start_commit = repo.commit('26faf85')
+end_commit = repo.commit('9ac62ae')
+
+# Создаем граф
+graph = nx.Graph()
 
 
 # Добавляем ребра для начального и конечного коммитов
@@ -32,8 +45,9 @@ path = []
 try:
     path = nx.shortest_path(graph, source=start_commit.hexsha, target=end_commit.hexsha)
     print("Shortest path:")
-    for commit in path:
-        print(commit)
+    for first_value, second_value in zip(path, path[1:]):
+        track_changes(first_value, second_value)
+# print(commit)
 except nx.NetworkXNoPath:
     print("No path found between the specified commits.")
 
