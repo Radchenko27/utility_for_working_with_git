@@ -1,35 +1,75 @@
 import git
 import networkx as nx
 import matplotlib.pyplot as plt
-import subprocess
+
 import sys
+from typing import Type, Optional, List, Set
 
 
-def add_edges(graph, commit, visited):
-    if commit.hexsha in visited:
-        return
-    visited.add(commit.hexsha)
-    for parent in commit.parents:
-        graph.add_edge(commit.hexsha, parent.hexsha)
-        add_edges(graph, parent, visited)
+class Graph:
+    visited: Set[str] = None
+    graph: Optional[nx.Graph] = None
+    path: List[str] = None
 
-
-def run_git_diff(repo_path, commit1, commit2):
-    try:
-        # Формируем команду git diff
-        command = ['git', '-C', repo_path, 'diff', commit1, commit2]
-
-        # Выполняем команду
-        result = subprocess.run(command, capture_output=True, text=True)
-
-        # Проверяем, если команда выполнена успешно
-        if result.returncode == 0:
-            print(result.stdout)  # Выводим результат diff
+    def __init__(self, repository: Type[git.Repo], start_hash: str, end_hash: str):
+        if isinstance(repository, git.Repo):
+            self.repository = repository
+            self.start_commit = repository.commit(start_hash)
+            self.end_commit = repository.commit(end_hash)
         else:
-            print(f"Error: {result.stderr}")
+            raise TypeError(
+                "Ошибка типа данных, в качестве аргументов обьекта класса Graph подайте объекты класса git.Repo")
 
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    @staticmethod
+    def add_edges(graph, commit, visited):
+        if commit.hexsha in visited:
+            return
+        visited.add(commit.hexsha)
+        for parent in commit.parents:
+            graph.add_edge(commit.hexsha, parent.hexsha)
+            Graph.add_edges(graph, parent, visited)
+
+    def initialization_of_general_graph(self):
+        self.graph = nx.Graph()
+        self.visited = set()
+        self.add_edges(self.graph, self.start_commit, self.visited)
+        self.add_edges(self.graph, self.end_commit, self.visited)
+
+    def get_shortest_path(self):
+        if self.graph is None:
+            print("Вызовите метод initialization_of_general_graph . Граф пустой!")
+            return
+        try:
+            self.path = nx.shortest_path(self.graph, source=self.start_commit.hexsha, target=self.end_commit.hexsha)
+            return self.path
+        except nx.NetworkXNoPath:
+            print("Нет пути между коммитами.")
+
+    def get_history_diff(self):
+        if self.path is None:
+            print("Вызовите метод get_shortest_path. Поле path данного обЪекта равно None")
+            return
+        else:
+            for first_value, second_value in zip(self.path, self.path[1:]):
+                diff = self.repository.git.diff(first_value, second_value)
+                print(diff)
+                print('=' * 140)
+
+    def model_graph(self):
+        if self.graph is None:
+            print("Вызовите метод initialization_of_general_graph . Граф пустой!")
+            return
+        if self.path is None:
+            print("Вызовите метод get_shortest_path. Поле path данного обЪекта равно None")
+            return
+        pos = nx.spring_layout(self.graph)
+        plt.figure(figsize=(12, 8))
+        nx.draw(self.graph, pos, with_labels=True, node_size=500, node_color='skyblue', font_size=10,
+                font_weight='bold')
+        path_edges = list(zip(self.path, self.path[1:]))
+        nx.draw_networkx_edges(self.graph, pos, edgelist=path_edges, edge_color='r', width=2)
+        plt.title('Git Commit Graph with Shortest Path')
+        plt.show()
 
 
 def main():
@@ -37,46 +77,14 @@ def main():
         print(
             'Ошибка.Формат введенных данных должен соответствовать примеру: python example.py <repo_path> <commit1> <commit2>')
         sys.exit(1)
-        # Открываем существующий репозиторий
-    repo = git.Repo(f'{sys.argv[1]}')
-    # repo_path = r'C:\Users\dimar\OneDrive\Рабочий стол\Портфолио\Стажировка_работа_с_Git'
-    # Определяем начальный и конечный коммиты
-    start_commit = repo.commit(f'{sys.argv[2]}')
-    end_commit = repo.commit(f'{sys.argv[3]}')
-
-    # Создаем граф
-    graph = nx.Graph()
-
-    # Добавляем ребра для начального и конечного коммитов
-    visited = set()
-    add_edges(graph, start_commit, visited)
-    add_edges(graph, end_commit, visited)
-
-    path = []
-    # Находим кратчайший путь
-    try:
-        path = nx.shortest_path(graph, source=start_commit.hexsha, target=end_commit.hexsha)
-        # print("Shortest path:")
-        for first_value, second_value in zip(path, path[1:]):
-            # run_git_diff(repo_path, first_value, second_value)
-            diff = repo.git.diff(first_value, second_value)
-            print(diff)
-            print('=' * 140)
-    # print(commit)
-    except nx.NetworkXNoPath:
-        print("No path found between the specified commits.")
-
-    # Построение графа с выделением кратчайшего пути
-    pos = nx.spring_layout(graph)
-    plt.figure(figsize=(12, 8))
-    nx.draw(graph, pos, with_labels=True, node_size=500, node_color='skyblue', font_size=10, font_weight='bold')
-    path_edges = list(zip(path, path[1:]))
-    nx.draw_networkx_edges(graph, pos, edgelist=path_edges, edge_color='r', width=2)
-    plt.title('Git Commit Graph with Shortest Path')
-    plt.show()
+    #         # Открываем существующий репозиторий
+    repository = git.Repo(f'{sys.argv[1]}')
+    our_graph = Graph(repository, f'{sys.argv[2]}', f'{sys.argv[3]}')
+    our_graph.initialization_of_general_graph()
+    our_graph.get_shortest_path()
+    our_graph.get_history_diff()
+    our_graph.model_graph()
 
 
 if __name__ == '__main__':
     main()
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
