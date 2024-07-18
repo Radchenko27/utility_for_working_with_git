@@ -1,9 +1,11 @@
 import git
 import networkx as nx
 import matplotlib.pyplot as plt
-
+import logging
 import sys
 from typing import Type, Optional, List, Set
+
+logging.basicConfig(level=logging.DEBUG)
 
 
 class Graph:
@@ -37,30 +39,30 @@ class Graph:
 
     def get_shortest_path(self):
         if self.graph is None:
-            print("Вызовите метод initialization_of_general_graph . Граф пустой!")
+            logging.info("Вызовите метод initialization_of_general_graph . Граф пустой!")
             return
         try:
             self.path = nx.shortest_path(self.graph, source=self.start_commit.hexsha, target=self.end_commit.hexsha)
             return self.path
         except nx.NetworkXNoPath:
-            print("Нет пути между коммитами.")
+            logging.info("Нет пути между коммитами.")
 
     def get_history_diff(self):
         if self.path is None:
-            print("Вызовите метод get_shortest_path. Поле path данного обЪекта равно None")
+            logging.info("Вызовите метод get_shortest_path. Поле path данного обЪекта равно None")
             return
         else:
             for first_value, second_value in zip(self.path, self.path[1:]):
                 diff = self.repository.git.diff(first_value, second_value)
-                print(diff)
-                print('=' * 140)
+                logging.info(diff)
+                logging.info('=' * 140)
 
     def model_graph(self):
         if self.graph is None:
-            print("Вызовите метод initialization_of_general_graph . Граф пустой!")
+            logging.info("Вызовите метод initialization_of_general_graph . Граф пустой!")
             return
         if self.path is None:
-            print("Вызовите метод get_shortest_path. Поле path данного обЪекта равно None")
+            logging.info("Вызовите метод get_shortest_path. Поле path данного обЪекта равно None")
             return
         pos = nx.spring_layout(self.graph)
         plt.figure(figsize=(12, 8))
@@ -74,7 +76,7 @@ class Graph:
 
 def main():
     if len(sys.argv) != 4:
-        print(
+        logging.warning(
             'Ошибка.Формат введенных данных должен соответствовать примеру: python example.py <repo_path> <commit1> <commit2>')
         sys.exit(1)
     #         # Открываем существующий репозиторий
