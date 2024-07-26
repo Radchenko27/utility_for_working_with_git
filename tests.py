@@ -2,67 +2,169 @@ from main import Graph
 import git
 import networkx as nx
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestGraph(unittest.TestCase):
+    """
+                                              g --- k
+                                             /       \
+модель графа для тестирования: a -- b -- f ----- l -- j
+                                    \           /
+                                     c -- d -- e
+    """
 
     def setUp(self):
-        self.repository = MagicMock(spec=git.Repo)
-        self.commit1 = MagicMock(spec=git.Commit)
-        self.commit2 = MagicMock(spec=git.Commit)
-        self.commit1.hexsha = 'a1b2c3d4'
-        self.commit2.hexsha = 'e5f6g7h8'
-        self.commit1.parents = []
-        self.commit2.parents = [self.commit1]
-        self.repository.commit.side_effect = lambda x: self.commit1 if x == 'a1b2c3d4' else self.commit2
+        # Создаем фиктивные объекты коммитов
+        self.mock_commit_a = MagicMock()
+        self.mock_commit_a.hexsha = "a"
+        self.mock_commit_a.parents = []
+
+        self.mock_commit_b = MagicMock()
+        self.mock_commit_b.hexsha = "b"
+        self.mock_commit_b.parents = [self.mock_commit_a]
+
+        self.mock_commit_c = MagicMock()
+        self.mock_commit_c.hexsha = "c"
+        self.mock_commit_c.parents = [self.mock_commit_b]
+
+        self.mock_commit_d = MagicMock()
+        self.mock_commit_d.hexsha = "d"
+        self.mock_commit_d.parents = [self.mock_commit_c]
+
+        self.mock_commit_e = MagicMock()
+        self.mock_commit_e.hexsha = "e"
+        self.mock_commit_e.parents = [self.mock_commit_d]
+
+        self.mock_commit_f = MagicMock()
+        self.mock_commit_f.hexsha = "f"
+        self.mock_commit_f.parents = [self.mock_commit_b]
+
+        self.mock_commit_g = MagicMock()
+        self.mock_commit_g.hexsha = "g"
+        self.mock_commit_g.parents = [self.mock_commit_f]
+
+        self.mock_commit_k = MagicMock()
+        self.mock_commit_k.hexsha = "k"
+        self.mock_commit_k.parents = [self.mock_commit_g]
+
+        self.mock_commit_l = MagicMock()
+        self.mock_commit_l.hexsha = "l"
+        self.mock_commit_l.parents = [self.mock_commit_f, self.mock_commit_e]
+
+        self.mock_commit_j = MagicMock()
+        self.mock_commit_j.hexsha = "j"
+        self.mock_commit_j.parents = [self.mock_commit_l, self.mock_commit_k]
+
+        # Создаем фиктивные ветки и связываем их с коммитами
+        self.mock_branch_main = MagicMock()
+        self.mock_branch_main.name = "main"
+
+        self.mock_branch_Release = MagicMock()
+        self.mock_branch_Release.name = "Release"
+
+        self.mock_branch_Release_2 = MagicMock()
+        self.mock_branch_Release_2.name = "Release_2"
+
+        # Создаем фиктивный репозиторий и возвращаем фиктивные коммиты
+        self.mock_repo = MagicMock()
+        self.mock_repo.commit.side_effect = lambda x: {
+            "a": self.mock_commit_a,
+            "b": self.mock_commit_b,
+            "c": self.mock_commit_c,
+            "d": self.mock_commit_d,
+            "e": self.mock_commit_e,
+            "f": self.mock_commit_f,
+            "g": self.mock_commit_g,
+            "k": self.mock_commit_k,
+            "l": self.mock_commit_l,
+            "j": self.mock_commit_j,
+        }[x]
+
+        # Добавляем ветки в репозиторий
+        self.mock_repo.branches = [self.mock_branch_main, self.mock_branch_Release, self.mock_branch_Release_2]
+
+        # Связываем коммиты с ветками
+        self.mock_repo.iter_commits.side_effect = lambda branch_name: {
+            "main": [self.mock_commit_a, self.mock_commit_b, self.mock_commit_c, self.mock_commit_d, self.mock_commit_e,
+                     self.mock_commit_f, self.mock_commit_l, self.mock_commit_j],
+            "Release": [self.mock_commit_d, self.mock_commit_b, self.mock_commit_c, self.mock_commit_a],
+            "Release_2": [self.mock_commit_d, self.mock_commit_b, self.mock_commit_c, self.mock_commit_a]
+        }[branch_name]
+        self.graph = Graph(self.mock_repo, "a", "b")
 
     def test_init(self):
-        g = Graph(self.repository, 'a1b2c3d4', 'e5f6g7h8')
-        self.assertEqual(g.start_commit, self.commit1)
-        self.assertEqual(g.end_commit, self.commit2)
-
-    def test_init_type_error(self):
-        with self.assertRaises(TypeError):
-            Graph("не репозиторий ", 'a1b2c3d4', 'e5f6g7h8')
+        self.assertEqual(self.graph.repository, self.mock_repo)
+        self.assertEqual(self.graph.start_commit, self.mock_commit_a)
+        self.assertEqual(self.graph.end_commit, self.mock_commit_b)
+        self.assertIsInstance(self.graph.graph, nx.Graph)
+        self.assertIsInstance(self.graph.visited, set)
 
     def test_add_edges(self):
-        graph = nx.Graph()
-        visited = set()
-        Graph.add_edges(graph, self.commit2, visited)
-        self.assertIn(self.commit1.hexsha, visited)
-        self.assertIn(self.commit2.hexsha, visited)
-        self.assertTrue(graph.has_edge(self.commit2.hexsha, self.commit1.hexsha))
+        Graph.add_edges(self.graph.graph, self.mock_commit_b, self.graph.visited, self.graph.hash_branches)
+        self.assertIn("b", self.graph.graph.nodes)
+        self.assertIn("a", self.graph.graph.nodes)
+        self.assertIn(("b", "a"), self.graph.graph.edges)
 
-    def test_initialization_of_general_graph(self):
-        g = Graph(self.repository, 'a1b2c3d4', 'e5f6g7h8')
-        g.initialization_of_general_graph()
-        self.assertIsNotNone(g.graph)
-        self.assertIn(g.start_commit.hexsha, g.visited)
-        self.assertIn(g.end_commit.hexsha, g.visited)
+    """
+                                                g -- k
+                                               /       \
+  модель графа для тестирования: a -- b -- f ----- l -- j
+                                      \           /
+                                       c -- d -- e
+      """
 
-    def test_get_shortest_path(self):
-        g = Graph(self.repository, 'a1b2c3d4', 'e5f6g7h8')
-        g.initialization_of_general_graph()
-        path = g.get_shortest_path()
-        self.assertIsNotNone(path)
-        self.assertEqual(path, ['a1b2c3d4', 'e5f6g7h8'])
+    def test_get_shortest_path_сase_1(self):  # построение пути между двумя коммитами из разных веток
+        graph = Graph(self.mock_repo, "d", "g")
+        path = graph.get_shortest_path()
+        self.assertEqual(path, ['d', 'c', 'b', 'f', 'g'])
 
-    def test_get_history_diff(self):
-        g = Graph(self.repository, 'a1b2c3d4', 'e5f6g7h8')
-        g.initialization_of_general_graph()
-        g.get_shortest_path()
-        g.repository.git.diff = MagicMock(return_value="diff content")
-        with self.assertLogs() as log:
-            g.get_history_diff()
-            self.assertIn('diff content', log.output[0])
+    def test_get_shortest_path_сase_2(self):  # построение пути между двумя коммитами (один из main  другой из Release)
+        graph = Graph(self.mock_repo, "f", "e")
+        path = graph.get_shortest_path()
+        self.assertEqual(path, ['f', 'b', 'c', 'd', 'e'])
+
+    def test_get_shortest_path_сase_3(self):  # построение пути между двумя коммитами (один из main  другой из Release)
+        graph = Graph(self.mock_repo, "k", "l")
+        path = graph.get_shortest_path()
+        self.assertEqual(path, ['k', 'g', 'f', 'b', 'c', 'd', 'e', 'l'])
+
+    def test_get_shortest_path_сase_4(self):  # построение пути между двумя merge-коммитами
+        graph = Graph(self.mock_repo, "j", "l")
+        path = graph.get_shortest_path()
+        self.assertEqual(path, ['j', 'k', 'g', 'f', 'b', 'c', 'd', 'e', 'l'])
+
+    def test_get_shortest_path_no_path(self):
+        with self.assertRaises(ValueError):
+            graph = Graph(self.mock_repo, "a", "z")
+
+    # def test_get_shortest_path_single_node(self):
+    #     graph = Graph(self.mock_repo, "a", "a")
+    #     path = graph.get_shortest_path()
+    #     self.assertEqual(path, ["a"])
+
+    def test_find_lowest_common_ancestor(self):
+        # Проверяем, что метод find_lowest_common_ancestor находит правильного предка
+        lca_commit = self.graph.find_lowest_common_ancestor(self.mock_commit_a, self.mock_commit_b)
+        self.assertEqual(lca_commit.hexsha, "a")
+
+    def test_get_history_diff_no_path(self):
+        with self.assertRaises(ValueError):
+            graph = Graph(self.mock_repo, "a", "z")
+
+    def test_get_history_diff_with_path(self):
+        graph = Graph(self.mock_repo, "a", "g")
+        graph.path = ["a", "b", "d", "e", "g"]
+        graph.repository.git.diff = MagicMock(return_value="diff")
+        with self.assertLogs(level='INFO') as log:
+            graph.get_history_diff()
+            self.assertIn("diff", log.output[0])
 
     def test_model_graph(self):
-        g = Graph(self.repository, 'a1b2c3d4', 'e5f6g7h8')
-        g.initialization_of_general_graph()
-        g.get_shortest_path()
-        self.assertIsNotNone(g.graph)
-        self.assertIsNotNone(g.path)
+        # Проверяем, что метод model_graph не вызывает ошибок
+        with patch('matplotlib.pyplot.show'):
+            self.graph.get_shortest_path()
+            self.graph.model_graph()
 
 
 if __name__ == '__main__':
