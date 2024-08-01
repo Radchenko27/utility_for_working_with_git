@@ -114,33 +114,33 @@ class TestGraph(unittest.TestCase):
                                        c -- d -- e
       """
 
-    def test_get_shortest_path_сase_1(self):  # построение пути между двумя коммитами из разных веток
+    def test_get_unique_commits_сase_1(self):  # построение пути между двумя коммитами из разных веток
         graph = Graph(self.mock_repo, "d", "g")
-        path = graph.get_shortest_path()
-        self.assertEqual(path, ['d', 'c', 'b', 'f', 'g'])
+        path = graph.get_unique_commits()
+        self.assertEqual(sorted(path), sorted({'d', 'c',  'f', 'g'}))
 
-    def test_get_shortest_path_сase_2(self):  # построение пути между двумя коммитами (один из main  другой из Release)
+    def test_get_unique_commits_сase_2(self):  # построение пути между двумя коммитами (один из main  другой из Release)
         graph = Graph(self.mock_repo, "f", "e")
-        path = graph.get_shortest_path()
-        self.assertEqual(path, ['f', 'b', 'c', 'd', 'e'])
+        path = graph.get_unique_commits()
+        self.assertEqual(sorted(path), sorted({'f', 'c', 'd', 'e'}))
 
-    def test_get_shortest_path_сase_3(self):  # построение пути между двумя коммитами (один из main  другой из Release)
+    def test_get_unique_commits_сase_3(self):  # построение пути между двумя коммитами (один из main  другой из Release)
         graph = Graph(self.mock_repo, "k", "l")
-        path = graph.get_shortest_path()
-        self.assertEqual(path, ['k', 'g', 'f', 'b', 'c', 'd', 'e', 'l'])
+        path = graph.get_unique_commits()# определяет f как общего прородителя
+        self.assertEqual(sorted(path), sorted({'k', 'g', 'c', 'd', 'e', 'l'}))
 
-    def test_get_shortest_path_сase_4(self):  # построение пути между двумя merge-коммитами
+    def test_get_unique_commits_сase_4(self):  # построение пути между двумя merge-коммитами
         graph = Graph(self.mock_repo, "j", "l")
-        path = graph.get_shortest_path()
-        self.assertEqual(path, ['j', 'k', 'g', 'f', 'b', 'c', 'd', 'e', 'l'])
+        path = graph.get_unique_commits()
+        self.assertEqual(sorted(path), sorted({'g', 'k', 'j'}))
 
-    def test_get_shortest_path_no_path(self):
+    def test_get_unique_commits_no_path(self):
         with self.assertRaises(ValueError):
             graph = Graph(self.mock_repo, "a", "z")
 
-    # def test_get_shortest_path_single_node(self):
+    # def test_get_unique_commits_single_node(self):
     #     graph = Graph(self.mock_repo, "a", "a")
-    #     path = graph.get_shortest_path()
+    #     path = graph.get_unique_commits()
     #     self.assertEqual(path, ["a"])
 
     def test_find_lowest_common_ancestor(self):
@@ -148,23 +148,6 @@ class TestGraph(unittest.TestCase):
         lca_commit = self.graph.find_lowest_common_ancestor(self.mock_commit_a, self.mock_commit_b)
         self.assertEqual(lca_commit.hexsha, "a")
 
-    def test_get_history_diff_no_path(self):
-        with self.assertRaises(ValueError):
-            graph = Graph(self.mock_repo, "a", "z")
-
-    def test_get_history_diff_with_path(self):
-        graph = Graph(self.mock_repo, "a", "g")
-        graph.path = ["a", "b", "d", "e", "g"]
-        graph.repository.git.diff = MagicMock(return_value="diff")
-        with self.assertLogs(level='INFO') as log:
-            graph.get_history_diff()
-            self.assertIn("diff", log.output[0])
-
-    def test_model_graph(self):
-        # Проверяем, что метод model_graph не вызывает ошибок
-        with patch('matplotlib.pyplot.show'):
-            self.graph.get_shortest_path()
-            self.graph.model_graph()
 
 
 if __name__ == '__main__':

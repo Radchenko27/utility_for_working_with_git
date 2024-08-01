@@ -1,21 +1,17 @@
 import git
 import networkx as nx
-import matplotlib.pyplot as plt
-import logging
 import sys
-from typing import Type, Optional, List, Set, Any, Dict
+from typing import Optional, Set, Dict
 from git.exc import BadName
 from collections import defaultdict
-import gzip
 
-logging.basicConfig(level=logging.INFO)
 
 
 class Graph:
     repository: object
     visited: Set[str] = None
     graph: Optional[nx.DiGraph] = None
-    path: List[str] = None
+    unique_commits: Set[str] = None
     hash_branches: Dict = defaultdict(list)
 
     def __init__(self, repository: object, start_hash: str, end_hash: str):
@@ -29,7 +25,7 @@ class Graph:
             self.end_commit = repository.commit(end_hash)
         else:
             raise ValueError(
-                'Ошибка значения данных: проверьте подаваемые хеши в аргументы. Хотя бы один из них не принадлежит данному репозиторию'
+                "Ошибка значения данных: проверьте подаваемые хеши в аргументы. Хотя бы один из них не принадлежит данному репозиторию"
             )
         self.hash_branches = self.add_hash_branches(self.repository)
         self.graph = nx.DiGraph()
@@ -51,19 +47,16 @@ class Graph:
     @staticmethod
     def add_edges(graph, commit, visited, hash_branches):
 
-        if commit.hexsha in visited or len(commit.parents) == 0:
+        if commit.hexsha in visited:  # or len(commit.parents) == 0
             return
         visited.add(commit.hexsha)
 
         branch = hash_branches.get(commit.hexsha, "unknown")
         graph.add_node(commit.hexsha, branch=branch)
 
-        if len(commit.parents) > 1 and branch[0] == 'main':
-            parent = commit.parents[1]
-        else:
-            parent = commit.parents[0]
-        graph.add_edge(commit.hexsha, parent.hexsha)
-        Graph.add_edges(graph, parent, visited, hash_branches)
+        for parent in commit.parents:
+            graph.add_edge(commit.hexsha, parent.hexsha)
+            Graph.add_edges(graph, parent, visited, hash_branches)
 
     @staticmethod
     def is_commit_in_repo(repo: object, commit_hash: str) -> bool:
@@ -73,70 +66,58 @@ class Graph:
         except (BadName, KeyError):
             return False
 
-    def get_shortest_path(self):
+    def get_unique_commits(self):
 
         lca_commit = self.find_lowest_common_ancestor(self.start_commit, self.end_commit)
         if lca_commit is None:
             raise ValueError("Нет общего предка между коммитами.")
 
         # Находим путь от начального коммита до общего предка
-        path_to_lca = nx.shortest_path(self.graph, source=self.start_commit.hexsha, target=lca_commit.hexsha)
+        path_to_lca = list(nx.all_simple_paths(self.graph, source=self.start_commit.hexsha, target=lca_commit.hexsha))
         # Находим путь от конечного коммита до общего предка
-        path_from_lca = nx.shortest_path(self.graph, source=self.end_commit.hexsha, target=lca_commit.hexsha)
+        path_from_lca = list(nx.all_simple_paths(self.graph, source=self.end_commit.hexsha, target=lca_commit.hexsha))
+
+        path_to_lca_set = set()
+        path_from_lca_set = set()
+        for path in path_to_lca:
+            path_to_lca_set.update(path)
+
+        for path in path_from_lca:
+            path_from_lca_set.update(path)
+
+        self.unique_commits = path_to_lca_set.symmetric_difference(path_from_lca_set)
         # Объединяем пути, убирая дублирование общего предка
-        self.path = path_to_lca + path_from_lca[::-1][1:]
-        return self.path
+        return self.unique_commits
 
     def find_lowest_common_ancestor(self, commit1, commit2):
+        global paths_head_ancestor1, paths_head_ancestor2
         try:
-            ancestors1 = set(nx.single_source_shortest_path_length(self.graph, commit1.hexsha).keys())
-            ancestors2 = set(nx.single_source_shortest_path_length(self.graph, commit2.hexsha).keys())
-            common_ancestors = ancestors1 & ancestors2
+            roots = [node for node in self.graph if self.graph.out_degree(node) == 0]
+
+            for root in roots:
+                paths_head_ancestor1 = list(nx.all_simple_paths(self.graph, source=commit1.hexsha, target=root))
+                paths_head_ancestor2 = list(nx.all_simple_paths(self.graph, source=commit2.hexsha, target=root))
+
+            paths_head_ancestor = paths_head_ancestor1 + paths_head_ancestor2
+            paths_head_ancestor_set = [set(path) for path in paths_head_ancestor]
+            common_ancestors = set.intersection(*paths_head_ancestor_set)
             if not common_ancestors:
                 return None
             return self.repository.commit(
                 min(common_ancestors, key=lambda x: nx.shortest_path_length(self.graph, commit1.hexsha, x)))
-        except ValueError as e:
+        except ValueError:
             # Обработка отсутствия пути
-            logging.warning(f"Нет пути между : {e}")
             return None
-
-    def get_history_diff(self):
-        if self.path is None:
-            raise TypeError("Вызовите метод get_shortest_path. Поле path данного обЪекта равно None")
-        else:
-            for first_value, second_value in zip(self.path, self.path[1:]):
-                diff = self.repository.git.diff(first_value, second_value)
-                logging.info(diff)
-                logging.info('=' * 140)
-
-    def model_graph(self):
-        if self.path is None:
-            raise TypeError("Вызовите метод get_shortest_path. Поле path данного объекта равно None")
-
-        pos = nx.spring_layout(self.graph)
-        plt.figure(figsize=(12, 8))
-        nx.draw(self.graph, pos, with_labels=True, node_size=500, node_color='skyblue', font_size=10,
-                font_weight='bold')
-        path_edges = list(zip(self.path, self.path[1:]))
-        nx.draw_networkx_edges(self.graph, pos, edgelist=path_edges, edge_color='r', width=2)
-        plt.title('Git Commit Graph with Shortest Path')
-        plt.show()
 
 
 def main():
     if len(sys.argv) != 4:
-        logging.warning(
-            'Ошибка.Формат введенных данных должен соответствовать примеру: python example.py <repo_path> <commit1> <commit2>')
         sys.exit(1)
-    #         # Открываем существующий репозиторий
     repository = git.Repo(f'{sys.argv[1]}')
     our_graph = Graph(repository, f'{sys.argv[2]}', f'{sys.argv[3]}')
     # repository = git.Repo(r"C:\Users\dimar\OneDrive\Рабочий стол\Портфолио\ContentAI\Стажировка_работа_с_Git")
     # our_graph = Graph(repository, "9480afa", "ef3404f")
-    our_graph.get_shortest_path()
-    our_graph.get_history_diff()
-    our_graph.model_graph()
+    our_graph.get_unique_commits()
 
 
 if __name__ == '__main__':
